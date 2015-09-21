@@ -1,0 +1,123 @@
+/********************************************************************************
+ * Copyright (c) 2015  Juniper Networks. All Rights Reserved.
+ *
+ * YOU MUST ACCEPT THE TERMS OF THIS DISCLAIMER TO USE THIS SOFTWARE
+ *
+ * JUNIPER IS WILLING TO MAKE THE INCLUDED SCRIPTING SOFTWARE AVAILABLE TO YOU
+ * ONLY UPON THE CONDITION THAT YOU ACCEPT ALL OF THE TERMS CONTAINED IN THIS
+ * DISCLAIMER. PLEASE READ THE TERMS AND CONDITIONS OF THIS DISCLAIMER
+ * CAREFULLY.
+ *
+ * THE SOFTWARE CONTAINED IN THIS FILE IS PROVIDED "AS IS." JUNIPER MAKES NO
+ * WARRANTIES OF ANY KIND WHATSOEVER WITH RESPECT TO SOFTWARE. ALL EXPRESS OR
+ * IMPLIED CONDITIONS, REPRESENTATIONS AND WARRANTIES, INCLUDING ANY WARRANTY
+ * OF NON-INFRINGEMENT OR WARRANTY OF MERCHANTABILITY OR FITNESS FOR A
+ * PARTICULAR PURPOSE, ARE HEREBY DISCLAIMED AND EXCLUDED TO THE EXTENT ALLOWED
+ * BY APPLICABLE LAW.
+ * 
+ * IN NO EVENT WILL JUNIPER BE LIABLE FOR ANY LOST REVENUE, PROFIT OR DATA, OR
+ * FOR DIRECT, SPECIAL, INDIRECT, CONSEQUENTIAL, INCIDENTAL OR PUNITIVE DAMAGES
+ * HOWEVER CAUSED AND REGARDLESS OF THE THEORY OF LIABILITY ARISING OUT OF THE
+ * USE OF OR INABILITY TO USE THE SOFTWARE, EVEN IF JUNIPER HAS BEEN ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGES.
+ * 
+ ********************************************************************************
+ * Author        : Lamoni Finlayson, Juniper Networks Center of Excellence
+ * Version       : 1.0
+ * Last Modified : 09/16/2015
+ * Description   : Op script for calculating T-Spec and MaxAvgBW deltas and
+ *                  triggering an autobandwidth recalculation
+ *******************************************************************************/
+ 
+
+version 1.0;
+
+ns junos = "http://xml.juniper.net/junos/*/junos";
+ns xnm = "http://xml.juniper.net/xnm/1.1/xnm";
+ns jcs = "http://xml.juniper.net/junos/commit-scripts/1.0";
+ns func extension = "http://exslt.org/functions";
+ns bandwidth extension = "http://xml.juniper.net/bandwidth";
+
+import "../import/junos.xsl";
+ 
+match / {
+    <op-script-results> {
+
+        /*
+         * Get current TSpec information from "show rsvp session detail"
+         */
+        var $tspec_rpc = <get-rsvp-session-information> {
+            <detail> {
+            }
+        };
+        
+        var $rsvpSessions = jcs:invoke($tspec_rpc);
+
+        /*
+         * Get current MaxAvgBW information from "show mpls lsp ingress extensive"
+         */
+        var $maxavgbw_rpc = <get-mpls-lsp-information> {
+            <ingress> {
+            }
+            <extensive> {
+            }
+        };
+
+        var $lspSessions = jcs:invoke($maxavgbw_rpc);
+
+
+        /**
+        * Run through all of the LSPs and do our check
+        **/
+        for-each ($rsvpSessions//rsvp-session-data[session-type="Ingress"]/rsvp-session) {
+
+            var $tSpecBPS = bandwidth:convertToBPS(jcs:split(" ", sender-tspec)[4]);
+
+            var $tempLSPName = name;
+
+            var $tempLSP = $lspSessions//rsvp-session-data/rsvp-session/mpls-lsp[name=$tempLSPName];
+
+            var $maxAvgBWBPS = bandwidth:convertToBPS($tempLSP//mpls-lsp-autobandwidth/maximum-average-bandwidth);
+
+            var $minBWBPS = bandwidth:convertToBPS($tempLSP//mpls-lsp-autobandwidth/minimum-bandwidth);
+
+            if ( ($tSpecBPS - $maxAvgBWBPS) >= (($minBWBPS * 0.15) + $minBWBPS) ) {
+
+                var $command = <command> "request mpls lsp adjust-autobandwidth name " _ name;
+
+                expr jcs:invoke($command);
+
+                expr jcs:syslog("user.info", "Supplemental autobandwidth adjustment on: " _ name);
+
+            }
+
+        };
+
+    }
+}
+
+
+/*********************************************************************
+* Function - Convert a given bw unit to bits per second
+*********************************************************************/
+<func:function name="bandwidth:convertToBPS"> {
+    param $input;
+
+    mvar $finalBits;
+    if (contains($input, "k")) {
+        set $finalBits = jcs:split("k", $input)[1] * 1000;
+    }
+    else if (contains($input, "M")) {
+        set $finalBits = jcs:split("M", $input)[1] * 1000000;
+    }
+    else if (contains($input, "G")) {
+        set $finalBits = jcs:split("G", $input)[1] * 1000000000;
+    }
+    else {
+        set $finalBits = jcs:split("bps", $input)[1] * 1;
+    }
+
+    <func:result select="$finalBits">;
+
+}
+
