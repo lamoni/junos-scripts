@@ -6,32 +6,30 @@ import "../import/junos.xsl";
  
 
 match / {
-     <op-script-results> {    
-          var $fileget = {
-               <file-get> {
-                    <filename>"/var/tmp/yourstats.txt";
-                    <encoding>"ascii";
-               }
-          }
-     
-          var $connect = jcs:open(); 
-     
-          if ($connect) {
-            var $out = jcs:execute($connect, $fileget);
+<op-script-results> {    
+	var $fileget = {
+		<file-get> {
+            		<filename>"/var/tmp/yourstats.txt";
+            		<encoding>"ascii";
+       		}
+  	}
 
-            <output> "File contents: " _ $out;
-			
-			var $url = "http://yourwebserver/filetoreceivedata.php";
- 
-			var $full_url = $url _ "?data=" _ $out;
-            
-			var $http_get = <file-copy> {
-			    <source> $full_url;
-			    <destination> "/dev/null";
-				<source-address> 123.123.123.123
-			}
-        
-			var $rsp = jcs:execute( $connect, $http_get );
+	var $connect = jcs:open(); 
 
-     }
+	if ($connect) {
+		var $out = jcs:execute($connect, $fileget);
+
+		var $url = "http://yourwebserver/filetoreceivedata.php";
+
+		var $full_url = $url _ "?data=" _ $out;
+
+		var $http_get = <file-copy> {
+    			<source> $full_url;
+    			<destination> "/dev/null";
+			<source-address> 123.123.123.123
+		}
+
+		var $rsp = jcs:execute( $connect, $http_get );
+
+     	}
 }
