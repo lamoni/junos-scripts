@@ -26,7 +26,7 @@ match / {
 		var $http_get = <file-copy> {
     			<source> $full_url;
     			<destination> "/dev/null";
-			<source-address> 123.123.123.123
+			<source-address> "123.123.123.123";
 		}
 
 		var $rsp = jcs:execute( $connect, $http_get );
